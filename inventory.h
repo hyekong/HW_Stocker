@@ -30,16 +30,20 @@ extern const int NUM_CATEGORIES;
 extern const char* VALID_MANUFACTURERS[];
 extern const int NUM_MANUFACTURERS;
 
-void clearBuffer();
-void showCategoryMenu();
-void showManufacturerMenu();
 
-void addProduct();
-void listProducts();
+// --- Utility & System ---
+void clearBuffer();
 void saveToFile();
 void loadFromFile();
+void showCategoryMenu();     // 입력 보조
+void showManufacturerMenu(); // 입력 보조
+Product* searchByID(int id); // 내부 로직 보조
 
-Product* searchByID(int id); // ID로 특정 부품 찾기
-void updateProduct();        // F02: 부품 정보 수정 기능
-void releaseProduct();       // 출고 기능
+// --- Core Features (Match with Menu) ---
+void addProduct();      // F01. 신규 품목 등록 (Add)
+void updateProduct();   // F02. 품목 정보 수정 (Update)
+void deleteProduct();   // F03. 품목 삭제 (Delete)
+void releaseProduct();  // F04. 출고 관리 (Release)
+void listProducts();    // F05. 재고 현황 조회 (List)
+
 #endif
