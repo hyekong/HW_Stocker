@@ -173,12 +173,13 @@ void processSetRelease(int ids[], int size,int qty, const char* setName) {
 		for (int i=0; i<size; i++) {
 			Product* p = searchByID(ids[i]);
 			p->stock -= qty;
-			//logSale 장부 기록 함수를 넣을 자리
-			
+
+			logSale(p->name, qty, p->costPrice, p->sellPrice); //장부기록
+
 			printf(" - %s %d개 출고 완료 (남은 재고: %d개)\n", p->name, qty, p->stock);
 		}
 		saveToFile();
-		printf(">> 세트 출고가 정상적으로 완료되었습니다.\n");
+		printf(">>세트 출고 및 장부 기록이 완료되었습니다.\n");
 	} else { 
 		printf(">> 출고 취소: 재고가 부족한 부품이 있어 세트 출고를 진행할 수 없습니다.\n");
 	}
@@ -314,7 +315,7 @@ void processSetRestock(int ids[], int size, int qty, const char* setName) {
 	for (int i = 0; i < size; i++) {
 		Product* p = searchByID(ids[i]); // 부품 찾기
 		if (p != NULL) {
-			p->stock += qty; // 🌟 핵심! 찾은 부품의 재고를 올려줌
+			p->stock += qty; // 찾은 부품의 재고를 올려줌
 			printf(" - %s (ID: %d) 재고 %d개 증가 (현재: %d개)\n", p->name, p->id, qty, p->stock);
 		} else {
 			printf(" - [경고] ID %d번 부품을 찾을 수 없습니다.\n", ids[i]);
@@ -323,6 +324,30 @@ void processSetRestock(int ids[], int size, int qty, const char* setName) {
 	
 	saveToFile(); // 재고가 바뀌었으니 파일에 즉시 저장! (함수 이름이 다르면 혜정님 코드로 맞춰주세요)
 	printf(">> 입고 처리가 완료되었습니다.\n");
+}
+
+void logSale(const char* productName, int qty, int cost, int sell) {
+	FILE* f = fopen("sales.txt", "a");	
+	
+	if (f == NULL) {
+		printf(">> [오류] 장부 파일을 열 수 없습니다.\n");
+		return;
+	}
+
+	// 1. 현재 시간 가져오기
+	time_t t = time(NULL);
+	struct tm tm = *localtime(&t);
+
+	// 2. 순이익 계산 공식
+	// $NetProfit = (SellPrice - CostPrice) \times Quantity$
+	int profit = (sell - cost) * qty;
+
+	// 3. 파일에 예쁘게 기록 (날짜 | 제품명 | 출고수량 | 순이익)
+	fprintf(f, "[%d-%02d-%02d] %-20s | 출고: %d개 | 순이익: %d원\n",
+	        tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
+	        productName, qty, profit);
+
+	fclose(f);
 }
 
 // ==========================================================
@@ -949,6 +974,10 @@ void releaseProduct() {
 		}
 		else {
 			target->stock -= relQty;
+
+			//장부기록
+			logSale(target->name, relQty, target->costPrice, target->sellPrice);
+
             		printf(">> [성공] %d개 출고 완료! (남은 재고: %d개)\n", relQty, target->stock);
             		saveToFile(); // 실시간 저장
 		}
@@ -1171,4 +1200,34 @@ void listProducts(int mode) {
 	printf("============================================================================================================================\n");	
 } 
 
+//F06. 장부 조회(sales.txt 파일의 내용을 화면에 출력)
+void viewSalesLog() {
+	printf("\n===========================================================\n");
+	printf("                    💰 매출 및 장부 조회 💰                    \n");
+	printf("===========================================================\n");
 
+	// "r" 모드: 읽기 전용으로 열기!
+	FILE* f = fopen("sales.txt", "r"); 
+	if (f == NULL) {
+		printf(">> [안내] 아직 판매 내역이 없습니다. (첫 개시를 기다립니다!)\n");
+		printf("===========================================================\n");
+		return;
+	}
+
+	char buffer[256]; // 한 줄씩 읽어올 임시 바구니
+	int count = 0;    // 거래 건수 세기
+
+	// 파일의 끝(EOF)에 도달할 때까지 한 줄씩 읽어서 출력!
+	while (fgets(buffer, sizeof(buffer), f) != NULL) {
+		printf("%s", buffer);
+		count++;
+	}
+
+	fclose(f);
+	
+	if (count == 0) {
+		printf(">> [안내] 장부가 비어있습니다.\n");
+	}
+	printf("===========================================================\n");
+	printf(">> 총 %d건의 거래 내역이 조회되었습니다.\n", count);
+}

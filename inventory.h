@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #define MAX_NAME 128
 #define MAX_CAT 30
@@ -51,11 +52,13 @@ void loadCustomSetsFromFile();
 void saveCustomSetsToFile();
 void processSetRestock(int ids[], int size, int qty, const char* setName);
 void processSetRelease(int ids[], int size, int qty, const char* setName);
+void logSale(const char* productName, int qty, int cost, int sell);
+
 // --- Core Features (Match with Menu) ---
 void addProduct();      // F01. 신규 품목 등록 (Add)
 void updateProduct();   // F02. 품목 정보 수정 (Update)
 void deleteProduct();   // F03. 품목 삭제 (Delete)
 void releaseProduct();  // F04. 출고 관리 (Release)
 void listProducts(int mode);    // F05. 재고 현황 조회 (List)
-
+void viewSalesLog();	// F06.매출 및 장부 조회
 #endif
