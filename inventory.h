@@ -21,6 +21,14 @@ typedef struct Product {
     struct Product* next;
 } Product;
 
+// 커스텀 세트 구조체
+typedef struct CustomSet {
+	char setName[50];       // 세트 이름
+	int ids[20];            // 포함된 부품 ID들
+	int itemCount;          // 부품 종류 개수
+	struct CustomSet* next; // 다음 세트를 가리키는 포인터
+} CustomSet;
+
 extern Product* head;
 extern int lastId;
 
@@ -38,12 +46,16 @@ void loadFromFile();
 void showCategoryMenu();     // 입력 보조
 void showManufacturerMenu(); // 입력 보조
 Product* searchByID(int id); // 내부 로직 보조
-
+void saveCustomSet();
+void loadCustomSetsFromFile();
+void saveCustomSetsToFile();
+void processSetRestock(int ids[], int size, int qty, const char* setName);
+void processSetRelease(int ids[], int size, int qty, const char* setName);
 // --- Core Features (Match with Menu) ---
 void addProduct();      // F01. 신규 품목 등록 (Add)
 void updateProduct();   // F02. 품목 정보 수정 (Update)
 void deleteProduct();   // F03. 품목 삭제 (Delete)
 void releaseProduct();  // F04. 출고 관리 (Release)
-void listProducts();    // F05. 재고 현황 조회 (List)
+void listProducts(int mode);    // F05. 재고 현황 조회 (List)
 
 #endif

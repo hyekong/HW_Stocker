@@ -4,11 +4,12 @@ void showMenu() {
 	printf("\n==========================================\n");
         printf("   [조립 PC 재고 관리 시스템 v1.0]   \n");
 	printf("==========================================\n");	
-	printf(" 1. Add Item        (신규 품목 등록)\n");
+	printf(" 1. Receive Item    (입고 관리)\n");
         printf(" 2. Update Item     (품목 정보 수정)\n");
         printf(" 3. Delete Item     (품목 삭제)\n");
         printf(" 4. Release Item    (출고 관리)\n");
         printf(" 5. List Inventory  (재고 현황 조회)\n");
+	printf(" 6. ()\n");
         printf(" 0. Save & Exit     (저장 및 종료)\n");
 	printf("==========================================\n");
 	printf("선택 >> ");
@@ -19,6 +20,7 @@ int main() {
 
     // 프로그램 시작 시 파일에서 데이터 불러오기
     loadFromFile();
+    loadCustomSetsFromFile();
 
     while(1) {
         showMenu();
@@ -47,7 +49,7 @@ int main() {
 		saveToFile();
 		break;
 	    case 5:
-                listProducts();
+                listProducts(0);
                 break;
             case 0:
                 saveToFile(); // 안전하게 한 번 더 저장

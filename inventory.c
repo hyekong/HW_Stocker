@@ -6,6 +6,7 @@
 
 Product* head = NULL;
 int lastId = 0;
+CustomSet* customHead = NULL;
 
 // 카테고리 배열
 const char* VALID_CATEGORIES[] = {
@@ -151,141 +152,513 @@ Product* searchByNo(int no) {
 }
 
 // 세트 출고 보조 함수
-void processSetRelease(int ids[], int size, const char* setName) {
-	// 1단계: 모든 부품이 존재하는지 및 재고 확인
+void processSetRelease(int ids[], int size,int qty, const char* setName) {
+	printf("\n>> [%s] 세트 출고 처리를 시작합니다.\n", setName);
+
+	// 1단계: 모든 부품의 재고가 충분한지 확인
+	int isEnough = 1;
 	for (int i = 0; i < size ; i++) {
 		Product* p = searchByID(ids[i]);
 		if (p == NULL) {
-			printf(">>[오류] %s 세트의 부품(ID:%d)이 리스트에 없습니다.\n", setName, ids[i]);
-			return;
-		}
-		if (p->stock < 1) {
-			printf(">> [품절] [%s] 부품 재고가 부족하여 세트 출고가 불가능합니다.\n", p->name);
-            	return;
+			printf(" - [경고] ID %d 부품을 찾을 수 없습니다.\n", ids[i]);
+			isEnough = 0;
+		} else if (p->stock < qty) {
+			printf(" - [재고 부족] %s (현재 재고: %d개, 필요 수량: %d개)\n", p->name, p->stock, qty);
+			isEnough = 0;
 		}
 	}
-	// 2단계: 모든 부품이 준비되었을 때만 재고 차감
-	printf("\n>> %s 출고를 시작합니다...\n", setName);
-	for(int i=0; i<size; i++) {
-		Product* p = searchByID(ids[i]);
-		p->stock -= 1;
-		printf("   - [%s] 재고 차감 완료 (남은 수량: %d)\n", p->name, p->stock);
-    	}
+		
+	// 2단계: 재고가 모두 충분할 때만 실제 출고 진행
+	if (isEnough) {
+		for (int i=0; i<size; i++) {
+			Product* p = searchByID(ids[i]);
+			p->stock -= qty;
+			//logSale 장부 기록 함수를 넣을 자리
+			
+			printf(" - %s %d개 출고 완료 (남은 재고: %d개)\n", p->name, qty, p->stock);
+		}
+		saveToFile();
+		printf(">> 세트 출고가 정상적으로 완료되었습니다.\n");
+	} else { 
+		printf(">> 출고 취소: 재고가 부족한 부품이 있어 세트 출고를 진행할 수 없습니다.\n");
+	}
+}
+
+// ==========================================
+// [커스텀 세트 유틸리티 3대장]
+// ==========================================
+
+// 1. 커스텀 세트 파일에 영구 저장하기
+void saveCustomSetsToFile() {
+	FILE* f = fopen("custom_sets.txt", "w");
+	if (f == NULL) return;
+
+	CustomSet* curr = customHead;
+	while (curr != NULL) {
+		fprintf(f, "%s %d ", curr->setName, curr->itemCount);
+		for (int i = 0; i < curr->itemCount; i++) {
+			fprintf(f, "%d ", curr->ids[i]);
+		}
+		fprintf(f, "\n");
+		curr = curr->next;
+	}
+	fclose(f);
+}
+
+// 2. 프로그램 켤 때 커스텀 세트 불러오기
+void loadCustomSetsFromFile() {
+	FILE* f = fopen("custom_sets.txt", "r");
+	if (f == NULL) return; // 파일 없으면 그냥 넘어감
+
+	while (1) {
+		CustomSet* newNode = (CustomSet*)malloc(sizeof(CustomSet));
+		if (newNode == NULL) break;
+
+		if (fscanf(f, "%s %d", newNode->setName, &newNode->itemCount) == EOF) {
+			free(newNode);
+			break;
+		}
+
+		for (int i = 0; i < newNode->itemCount; i++) {
+			fscanf(f, "%d", &newNode->ids[i]);
+		}
+
+		newNode->next = customHead;
+		customHead = newNode;
+	}
+	fclose(f);
+}
+
+// 3. 새로운 커스텀 세트 레시피 만들기
+void saveCustomSet() {
+	CustomSet* newNode = (CustomSet*)malloc(sizeof(CustomSet));
+	if (newNode == NULL) return;
+
+	printf("\n--- [새 커스텀 세트 만들기] ---\n");
+	printf("세트 이름 (공백 없이): ");
+	scanf("%s", newNode->setName);
+	clearBuffer();
+
+	int count = 0;
+	int inputId;
+
+	printf("\n포함할 부품의 ID를 하나씩 입력하세요. (종료: 0)\n");
+
+	while (count < 20) {
+		printf("[%d번째 부품] ID 입력 >> ", count + 1);
+		scanf("%d", &inputId);
+		clearBuffer();
+
+		if (inputId == 0) break; // 0 누르면 입력 종료!
+
+		if (searchByID(inputId) != NULL) {
+			newNode->ids[count] = inputId;
+			count++;
+			printf(">> ID %d번 부품이 담겼습니다.\n", inputId);
+		} else {
+			printf(">> [경고] 존재하지 않는 부품입니다.\n");
+		}
+	}
+
+	if (count > 0) {
+		newNode->itemCount = count;
+		newNode->next = customHead;
+		customHead = newNode;
+
+		saveCustomSetsToFile(); 
+		printf("\n>> 성공띠! '%s' 세트(부품 %d종) 등록 완료!\n", newNode->setName, count);
+	} else {
+		printf("\n>> 담은 부품이 없어 취소되었습니다.\n");
+		free(newNode);
+	}
+}
+// [유틸리티] 세트에 포함된 부품들의 재고를 일괄 증가(입고)시키는 함수
+void processSetRestock(int ids[], int size, int qty, const char* setName) {
+	printf("\n>> [%s] 세트 구성품 입고 처리를 시작합니다.\n", setName);
 	
-	printf(">> [성공] %s 세트 1대가 정상 출고되었습니다!\n", setName);
-	saveToFile();
+	for (int i = 0; i < size; i++) {
+		Product* p = searchByID(ids[i]); // 부품 찾기
+		if (p != NULL) {
+			p->stock += qty; // 🌟 핵심! 찾은 부품의 재고를 올려줌
+			printf(" - %s (ID: %d) 재고 %d개 증가 (현재: %d개)\n", p->name, p->id, qty, p->stock);
+		} else {
+			printf(" - [경고] ID %d번 부품을 찾을 수 없습니다.\n", ids[i]);
+		}
+	}
+	
+	saveToFile(); // 재고가 바뀌었으니 파일에 즉시 저장! (함수 이름이 다르면 혜정님 코드로 맞춰주세요)
+	printf(">> 입고 처리가 완료되었습니다.\n");
 }
 
 // ==========================================================
 // [3] 핵심 기능 (Core Features)
 // ==========================================================
 
-// F01: 신규 품목 등록 (Add)
+// F01: 신규/기존 부품 입고(Add)
 void addProduct() {
-	Product* newNode = (Product*)malloc(sizeof(Product));
-	if (!newNode) return;
+	printf("\n===== [입고 관리] =====\n");
+	printf("1. 신규 부품 단일 입고\n");
+	printf("2. 기존 부품 단일 입고\n");
+	printf("3. 신규 커스텀 세트 입고\n");
+	printf("4. 기존 커스텀 세트 입고\n");
+	printf("5. 프리셋 세트 입고\n");
+	printf("0. 뒤로가기\n");
+	printf("선택 >> ");
 
-	newNode->id = ++lastId;
+	int addChoice;
+	scanf("%d", &addChoice);
+	clearBuffer();
 
-	printf("\n--- 신규 부품 등록 ---\n");
-	
-	//(1) 카테고리 먼저 선택받기	
-	int catChoice;
-	while (1) {
-		showCategoryMenu();
-		printf("등록할 카테고리의 번호를 입력하세요 (1~%d): ", NUM_CATEGORIES);
-		if ( scanf("%d", &catChoice) != 1) {
-			printf("X 숫자로만 입력해주세요!\n");
-			clearBuffer();
-			continue;
-		}
+	//F01-1.신규 부품 입고
+	if (addChoice == 1) {
+		printf("\n--- [1. 신규 부품 입고] ---\n");
+		Product* newNode = (Product*)malloc(sizeof(Product));
+		if (!newNode) return;
+
+		newNode->id = ++lastId;
+
+		//F01-1-1.신규 카테고리 선택
+		int catChoice;
+		while (1) {
+			showCategoryMenu();
+			printf("등록할 카테고리의 번호를 입력하세요 (1~%d): ", NUM_CATEGORIES);
+		                if ( scanf("%d", &catChoice) != 1) {
+	                        printf("X 숫자로만 입력해주세요!\n");
+ 	                       clearBuffer();
+	                        continue;
+		                }
+	                clearBuffer();
+
+	                if (catChoice >= 1 && catChoice <= NUM_CATEGORIES) {
+	                        strcpy(newNode->category, VALID_CATEGORIES[catChoice - 1]);
+	                        printf(">> [%s] 카테고리가 선택되었습니다.\n\n", newNode->category);
+	                        break;
+        	        } else {
+                        	printf("X 잘못된 번호입니다. 1에서 %d 사이의 번호를 입력해주세요.\n", NUM_CATEGORIES);
+                	}
+        	}
+		
+		//F01-1-2.신규 제조사 선택
+		int mfgChoice;
+        	while(1) {
+                	showManufacturerMenu();
+                	printf("제조사 번호를 선택하세요 (1~%d): ", NUM_MANUFACTURERS);
+                	if ( scanf("%d", &mfgChoice) != 1) {
+                        	printf(" XX 숫자로만 입력해주세요!\n");
+                        	clearBuffer();
+                        	continue;
+                	}
+                	clearBuffer();
+
+	                if(mfgChoice >= 1 && mfgChoice <= NUM_MANUFACTURERS) {
+                        // '기타' 선택 시 직접 입력
+                        	if(mfgChoice == NUM_MANUFACTURERS) {
+                                	printf("제조사 이름을 직접 입력하세요 (띄어쓰기 없이): ");
+                                	scanf("%s", newNode->manufacturer);
+                                	clearBuffer();
+                        	} else {
+                                strcpy(newNode->manufacturer, VALID_MANUFACTURERS[mfgChoice - 1]);
+                        	}
+                        	printf(">> [%s] 제조사가 선택되었습니다.\n\n", newNode->manufacturer);
+                        	break;
+                	} else {
+                		printf("XX 잘못된 번호입니다.\n");
+                	}
+        	}
+		
+		//F01-1-3. 신규 나머지 정보 입력
+		printf("제품명을 입력할 땐, 띄어쓰기 대신 '_' 를 사용해주세요.\n");
+		printf("(예 : 인텔_코어i5)\n");
+		printf("제품명: ");
+		scanf("%s", newNode->name);
+		clearBuffer();	
+
+		printf("매입가: ");
+		scanf("%d", &newNode->costPrice);
+		clearBuffer();	
+
+		printf("판매가: ");
+		scanf("%d" , &newNode->sellPrice);
 		clearBuffer();
 
-		if (catChoice >= 1 && catChoice <= NUM_CATEGORIES) {
-			strcpy(newNode->category, VALID_CATEGORIES[catChoice - 1]);
-			printf(">> [%s] 카테고리가 선택되었습니다.\n\n", newNode->category);
-			break;
+		printf("초기 수량: ");
+		scanf("%d", &newNode->stock);
+		clearBuffer();
+
+		newNode->next=NULL;
+
+		//F01-1-4.1. 리스트가 비어있거나, 새 제품이 첫 번째 노드보다 순서가 빠른 경우 (맨 앞에 삽입)
+		if (head == NULL || getCategoryOrder(newNode->category) < getCategoryOrder(head->category)) {
+			newNode->next = head;
+			head = newNode;
 		}
-		else {
-			printf("X 잘못된 번호입니다. 1에서 %d 사이의 번호를 입력해주세요.\n", NUM_CATEGORIES);
-		}
-	}
-
-	//(2) 제조사 선택 받기
-	int mfgChoice;
-	while(1) {
-		showManufacturerMenu();
-		printf("제조사 번호를 선택하세요 (1~%d): ", NUM_MANUFACTURERS);
-		if ( scanf("%d", &mfgChoice) != 1) {
-			printf(" XX 숫자로만 입력해주세요!\n");
-			clearBuffer();
-			continue;
-		}
-		clearBuffer();	
-	
-		if(mfgChoice >= 1 && mfgChoice <= NUM_MANUFACTURERS) {
-			// '기타' 선택 시 직접 입력
-			if(mfgChoice == NUM_MANUFACTURERS) {
-				printf("제조사 이름을 직접 입력하세요 (띄어쓰기 없이): ");
-				scanf("%s", newNode->manufacturer);
-				clearBuffer();
-			}
-			else {
-				strcpy(newNode->manufacturer, VALID_MANUFACTURERS[mfgChoice - 1]);
-			}
-			printf(">> [%s] 제조사가 선택되었습니다.\n\n", newNode->manufacturer);
-			break;
-		}
-		else {
-		printf("XX 잘못된 번호입니다.\n");
-		}
-	}
-
-	// (3) 나머지 정보 입력
-	printf("제품명을 입력할 땐, 띄어쓰기 대신 '_' 를 사용해주세요.\n");
-	printf("(예 : 인텔_코어i5)\n");
-	printf("제품명: ");
-	scanf("%s", newNode->name);
-	clearBuffer();
-
-	printf("매입가: ");
-	scanf("%d", &newNode->costPrice);
-	clearBuffer();
-
-	printf("판매가: ");
-	scanf("%d" , &newNode->sellPrice);
-	clearBuffer();
-
-	printf("초기 수량: ");
-	scanf("%d", &newNode->stock);
-	clearBuffer();
-
-	newNode->next=NULL;
-
-	// 1. 리스트가 비어있거나, 새 제품이 첫 번째 노드보다 순서가 빠른 경우 (맨 앞에 삽입)
-	if (head == NULL || getCategoryOrder(newNode->category) < getCategoryOrder(head->category)) {
-
-        	newNode->next = head;
-        	head = newNode;
-    	} 
-
-	// 2. 자기 자리를 찾아감 (카테고리 순서가 같거나 빠른 동안 전진)
-    	else {
-        	Product* current = head;
-        	while (current->next != NULL && 
-               		getCategoryOrder(current->next->category) <= getCategoryOrder(newNode->category)) {
-            		current = current->next;
+		//F01-1-4.2. 자기 자리를 찾아감 (카테고리 순서가 같거나 빠른 동안 전진)
+        	else {
+			Product* current = head;
+			while (current->next != NULL &&getCategoryOrder(current->next->category) 
+				<=getCategoryOrder(newNode->category)) {
+					current = current->next;
+                	}
+		//F01-1-4.3.찾은 위치 뒤에 끼워넣기
+        	newNode->next = current->next;
+        	current->next = newNode;
         	}
-        // 찾은 위치 뒤에 끼워넣기
-        newNode->next = current->next;
-        current->next = newNode;
-    	}
 
-	printf(">> 등록 완료! (ID: %d, 제조사: %s, 제품명: %s)\n", 
-		newNode->id, newNode->manufacturer, newNode->name);
-	saveToFile();
+		printf(">> 등록 완료! (ID: %d, 제조사: %s, 제품명: %s)\n",
+                newNode->id, newNode->manufacturer, newNode->name);
+        	saveToFile();
+	}
+
+        //F01-2. 기존 부품 입고
+        else if (addChoice == 2) {
+		listProducts(1);		
+		printf("\n--- [2. 기존 부품 입고] ---\n");
+		printf("입고할 부품의 ID를 입력하세요: ");
+		
+		int searchId;
+		scanf("%d", &searchId);
+		clearBuffer();
+
+		// 입력한 ID로 부품 찾기 (어제 만든 만능 탐색기!)
+		Product* p = searchByID(searchId);
+		
+		if (p != NULL) {
+			// 부품을 찾았을 때
+			printf("\n>> [%s] 부품을 찾았습니다. (현재 재고: %d개)\n", p->name, p->stock);
+			printf("추가로 입고할 수량을 입력하세요 (취소: 0): ");
+			
+			int addQty;
+			scanf("%d", &addQty);
+			clearBuffer();
+
+			if (addQty > 0) {
+				p->stock += addQty; //  핵심: 기존 재고에 더하기
+				saveToFile();       //  잊지 말고 장부에 기록 (함수 이름 맞는지 확인!)
+				printf(">> 성공! %d개가 추가 입고되어 총 %d개가 되었습니다.\n", addQty, p->stock);
+			} else if (addQty == 0) {
+				printf(">> 입고가 취소되었습니다.\n");
+			} else {
+				printf(">> [오류] 올바르지 않은 수량입니다.\n");
+			}
+		} else {
+			// 부품을 못 찾았을 때
+			printf(">> [오류] 해당 ID(%d)를 가진 부품이 등록되어 있지 않습니다.\n", searchId);
+		}
+	}
+
+	//F01-3. 신규 커스텀 세트 입고
+        else if (addChoice == 3) {
+		printf("\n--- [3. 신규 커스텀 세트 입고] ---\n");
+		saveCustomSet(); 
+		
+		if (customHead != NULL) {
+			printf("\n방금 만든 '%s' 세트를 총 몇 대 입고하시겠습니까? (취소: 0): ", customHead->setName);
+			int restockQty;
+			scanf("%d", &restockQty);
+			clearBuffer();
+			
+			if (restockQty > 0) {
+				processSetRestock(customHead->ids, customHead->itemCount, restockQty, customHead->setName);
+			}
+		}
+        }
+
+	//F01-4. 기존 커스텀 세트 입고
+        else if (addChoice == 4) {
+		printf("\n--- [4. 기존 커스텀 세트 입고] ---\n");
+		if (customHead == NULL) {
+			printf(">> [안내] 아직 등록된 커스텀 세트가 없습니다.\n");
+		} else {
+			CustomSet* curr = customHead;
+			int index = 1;
+			
+			// 등록된 커스텀 세트 목록 출력
+			while (curr != NULL) {
+				printf("%d. %s (포함 부품 %d종)\n", index++, curr->setName, curr->itemCount);
+				curr = curr->next;
+			}
+			
+			printf("입고할 세트 번호 선택 (취소: 0) >> ");
+			int selectNum;
+			scanf("%d", &selectNum);
+			clearBuffer();
+			
+			if (selectNum > 0 && selectNum < index) {
+				// 사용자가 선택한 번호의 세트 찾기
+				curr = customHead;
+				for (int i = 1; i < selectNum; i++) curr = curr->next;
+				
+				// 찾은 세트로 실제 재고 더하기
+				printf("\n>> '%s' 세트를 선택하셨습니다.\n", curr->setName);
+				printf("입고할 수량(세트 단위) 입력: ");
+				int restockQty;
+				scanf("%d", &restockQty);
+				clearBuffer();
+				
+				if (restockQty > 0) {
+					processSetRestock(curr->ids, curr->itemCount, restockQty, curr->setName);
+				}
+			} else if (selectNum != 0) {
+				printf(">> [오류] 잘못된 번호입니다.\n");
+			}
+		}
+	}
+
+	//F01-5. 프리셋 세트 입고
+        else if (addChoice == 5) {
+		printf("\n----- [5. 프리셋 세트 입고] -----\n");
+		printf("1. 사무/가정용 세트 (B1~B6)\n");
+		printf("2. 게이밍/그래픽 작업 세트 (G1~G6)\n");
+		printf("3. 고사양 게임/영상편집 세트 (H1~H6)\n");
+		printf("4. 프리미엄 4K 세트 (P1~P6)\n");
+		printf("5. 딥러닝/워크스테이션 세트 (W1~W6)\n");
+		printf("0. 취소\n");
+		printf("카테고리 선택 >> ");
+		
+		int setCatChoice;
+		scanf("%d", &setCatChoice);
+		clearBuffer();
+
+		//F01-5-1. 사무/가정용 세트 입고
+		if (setCatChoice == 1) {
+			printf("\n===== [사무/가정용 세트 선택] =====\n");
+			printf("1. B1: G5905/내장 \n2. B2: 3200G/내장 \n3. B3: 13100F/GT710 \n4. B4: 8500G/내장 \n5. B5: 5600G/내장 \n6. B6: 12400/내장\n");
+			printf("선택 >> ");
+
+			int sub;
+			scanf("%d", &sub);
+			clearBuffer();
+			
+			if (sub >= 1 && sub <= 6) {
+				printf("입고할 수량(세트 단위): ");
+				int setRestockQty;
+				scanf("%d", &setRestockQty);
+				clearBuffer();
+				
+				if (setRestockQty > 0) {
+					processSetRestock(officeSets[sub-1].ids, 
+					                  officeSets[sub-1].size, 
+					                  setRestockQty, 
+					                  officeSets[sub-1].setName);
+				}
+			}
+		}
+		
+		//F01-5-2. 게이밍/그래픽 작업 세트 입고
+                else if (setCatChoice == 2) {
+                        printf("\n===== [게이밍/그래픽 작업 세트 선택] =====\n");
+			printf("1. G1: 245K/내장 \n2. G2: 5600/RTX3050 \n3. G3: 5600/RX7600 \n4. G4: 12400F/RTX5050 \n5. G5: 5600/RTX5060 \n6. G6: 14400F/RTX5060\n");
+                        printf("선택 >> ");
+
+                        int sub;
+                        scanf("%d", &sub);
+                        clearBuffer();
+
+                        if (sub >= 1 && sub <= 6) {
+                                printf("입고할 수량(세트 단위): ");
+                                int setRestockQty;
+                                scanf("%d", &setRestockQty);
+                                clearBuffer();
+
+                                if (setRestockQty > 0) {
+                                        processSetRestock(gamingSets[sub-1].ids,
+                                                          gamingSets[sub-1].size,
+                                                          setRestockQty,
+                                                          gamingSets[sub-1].setName);
+                                }
+                        }
+                }
+
+		//F01-5-3. 고사양 게임/영상편집 세트 입고
+                else if (setCatChoice == 3) {
+                        printf("\n===== [ 고사양 게임/영상편집 세트 선택] =====\n");
+			printf("1. H1: 7400F/RTX5060 \n2. H2: 7400F/RX9060 XT \n3. H3: 9600/RX9060 XT \n4. H4: 7400/RTX5060 Ti \n5. H5: 14600KF/RTX5060 \n6. H6: 9600/RTX5060 Ti\n");
+                        printf("선택 >> ");
+
+                        int sub;
+                        scanf("%d", &sub);
+                        clearBuffer();
+
+                        if (sub >= 1 && sub <= 6) {
+                                printf("입고할 수량(세트 단위): ");
+                                int setRestockQty;
+                                scanf("%d", &setRestockQty);
+                                clearBuffer();
+
+                                if (setRestockQty > 0) {
+                                        processSetRestock(proSets[sub-1].ids,
+                                                          proSets[sub-1].size,
+                                                          setRestockQty,
+                                                          proSets[sub-1].setName);
+                                }
+                        }
+                }
+
+                //F01-5-4. 프리미엄 4K 세트 입고
+                else if (setCatChoice == 4) {
+                        printf("\n===== [ 프리미엄 4K 세트 선택] =====\n");
+			printf("1. P1: 14600KF/RTX5070 \n2. P2: 9600/RTX5070 \n3. P3: 265KF/RTX5070 \n4. P4: 7800X3D/RX9070 XT \n5. P5: 7800X3D/RTX5070 Ti \n6. P6: 9800X3D/RTX5070 Ti\n");
+                        printf("선택 >> ");
+
+                        int sub;
+                        scanf("%d", &sub);
+                        clearBuffer();
+
+                        if (sub >= 1 && sub <= 6) { 
+                                printf("입고할 수량(세트 단위): ");
+                                int setRestockQty;     
+                                scanf("%d", &setRestockQty);
+                                clearBuffer();
+
+                                if (setRestockQty > 0) {
+                                        processSetRestock(ultraSets[sub-1].ids,
+                                                          ultraSets[sub-1].size,
+                                                          setRestockQty,
+                                                          ultraSets[sub-1].setName);
+                                }
+                        }
+                }
+
+		//F01-5-5. 딥러닝/워크스테이션 세트 입고
+                else if (setCatChoice == 4) {
+                        printf("\n===== [ 딥러닝/워크스테이션 세트 선택] =====\n");
+			printf("1. W1: 7800X3D/RTX5080 \n2. W2: 265KF/RTX5080 \n3. W3: 9800X3D/RTX5080 \n4. W4: 14900KF/RTX5080 \n5. W5: 9900XRTX5090 \n6. W6: 285K/RTX5090\n");
+                        printf("선택 >> ");
+
+                        int sub;
+                        scanf("%d", &sub);
+                        clearBuffer();
+
+                        if (sub >= 1 && sub <= 6) {
+                                printf("입고할 수량(세트 단위): ");
+                                int setRestockQty;
+                                scanf("%d", &setRestockQty);
+                                clearBuffer();
+
+                                if (setRestockQty > 0) {
+                                        processSetRestock(workSets[sub-1].ids,
+                                                          workSets[sub-1].size,
+                                                          setRestockQty,
+                                                          workSets[sub-1].setName);
+                                }
+                        }
+                }
+		else if (setCatChoice == 0) {
+			printf(">> 입고 메뉴 선택이 취소되었습니다.\n");
+			return;
+		}
+
+	}
+
+	else if (addChoice == 0) {
+		return; // 뒤로가기
+	}
+
+	else {
+		printf(">> [오류] 잘못된 입력입니다.\n");
+	}
+
 }
-
 //  F02: 품목 정보 수정
 void updateProduct() {
     if (head == NULL) {
@@ -293,7 +666,7 @@ void updateProduct() {
         return;
     }
 
-    listProducts();
+    listProducts(0);
 
     int targetNo;
     printf("\n-------- 품목 정보 수정 --------\n");
@@ -371,7 +744,7 @@ void deleteProduct() {
 	return; 
     }
 
-    listProducts();
+    listProducts(0);
 
     int targetNo;
     printf("\n삭제할 항목의 번호(No.)를 입력하세요: ");
@@ -411,11 +784,13 @@ void deleteProduct() {
 void releaseProduct() {
 	printf("\n--- [출고 관리] ---\n");
    	printf("1. 단품 출고 \n");
-	printf("2. 세트 출고 \n");
+	printf("2. 커스텀 세트 출고 \n");
+	printf("3. 프리셋 세트 출고 \n");
 	printf("0. 뒤로가기\n");
 	printf("================================\n");
 	printf("선택 >> ");
-    
+
+	int relQty = 0;
 	int relChoise;
 	if (scanf("%d", &relChoise) != 1) { 
 		printf(">> [오류] 숫자로 입력해주세요.\n");
@@ -424,10 +799,8 @@ void releaseProduct() {
 	 }
 	clearBuffer();
 
-	if (relChoise == 0) return;
-	
 	if (relChoise == 1) {
-		listProducts();
+		listProducts(0);
 		int targetNo;
 		printf("\n------- [단품 출고] -------\n");
         	printf("\n\n출고할 품목의 번호(No.)를 입력하세요: ");
@@ -455,26 +828,61 @@ void releaseProduct() {
 		printf(">> 선택된 상품: [%s] %s  %s (재고: %d개)\n", 
                	target->category,target->manufacturer, target->name, target->stock);
 
-		int qty;
 		printf("출고 수량을 입력하세요: ");
-		if (scanf("%d",&qty) != 1 || qty <=0) {
+		if (scanf("%d",&relQty) != 1 || relQty <=0) {
 			printf(">> [오류] 1 이상의 올바른 수량을 입력하세요.\n");
 			clearBuffer();
 			return;
 		}
 		clearBuffer();
 
-		if (qty > target->stock) {
+		if (relQty > target->stock) {
 			printf(">> [거부] 재고가 부족합니다! (현재 재고: %d개)\n", target->stock);
 		}
 		else {
-			target->stock -= qty;
-            		printf(">> [성공] %d개 출고 완료! (남은 재고: %d개)\n", qty, target->stock);
+			target->stock -= relQty;
+            		printf(">> [성공] %d개 출고 완료! (남은 재고: %d개)\n", relQty, target->stock);
             		saveToFile(); // 실시간 저장
 		}
 			
 	}
 	else if (relChoise == 2) {
+		printf("\n------- [ 커스텀 세트 출고 ] -------\n");
+		if (customHead == NULL) {
+			printf(">> [안내] 등록된 커스텀 세트가 없습니다.\n");
+		} else {
+			int index = 1;
+			CustomSet* curr = customHead;
+			while (curr != NULL) {
+				printf("%d. %s (포함 부품 %d종)\n", index++, curr->setName, curr->itemCount);
+				curr = curr->next;
+			}
+			
+			printf("출고할 세트 번호 선택 (취소: 0) >> ");
+			int selectNum;
+			scanf("%d", &selectNum);
+			clearBuffer();
+			
+			if (selectNum > 0 && selectNum < index) {
+				curr = customHead;
+				for (int i = 1; i < selectNum; i++) curr = curr->next;
+				
+				printf("\n>> '%s' 세트를 선택하셨습니다.\n", curr->setName);
+				printf("출고할 수량(세트 단위) 입력: ");
+				scanf("%d", &relQty);
+				clearBuffer();
+				
+				if (relQty > 0) {
+					// 입고(Restock) 대신 출고(Release) 함수 호출!
+					processSetRelease(curr->ids, curr->itemCount, relQty, curr->setName);
+				}
+			} else if (selectNum != 0) {
+				printf(">> [오류] 잘못된 번호입니다.\n");
+			}
+		}
+	}
+
+	else if (relChoise == 3) {
 		printf("\n[세트 카테고리 선택]\n");
         	printf("1. 사무/가정용 (B1~B6)\n");
         	printf("2. 게이밍/그래픽 작업 (G1~G6)\n");
@@ -502,8 +910,13 @@ void releaseProduct() {
 			clearBuffer();
         
         		if (sub > 0 && sub <= OFFICE_SETS_COUNT) {
+				printf("출고할 '%s' 세트의 수량을 입력하세요: ", officeSets[sub-1].setName);
+		                scanf("%d", &relQty); 
+                		clearBuffer();
+
             			processSetRelease(officeSets[sub-1].ids, 
                                 officeSets[sub-1].size, 
+				relQty,
                                 officeSets[sub-1].setName);
         		}
 		}
@@ -520,8 +933,13 @@ void releaseProduct() {
                         clearBuffer();
 
                         if (sub > 0 && sub <= GAMING_SETS_COUNT) {
+				printf("출고할 '%s' 세트의 수량을 입력하세요: ", gamingSets[sub-1].setName);
+                     		scanf("%d", &relQty); 
+                     		clearBuffer();
+
                                 processSetRelease(gamingSets[sub-1].ids,
                                 gamingSets[sub-1].size,
+                                relQty,
                                 gamingSets[sub-1].setName);
                         }
 		}
@@ -538,8 +956,13 @@ void releaseProduct() {
                         clearBuffer();
 
                         if (sub > 0 && sub <= PRO_SETS_COUNT) {
+				printf("출고할 '%s' 세트의 수량을 입력하세요: ", proSets[sub-1].setName);
+				scanf("%d", &relQty); 
+				clearBuffer();
+
                                 processSetRelease(proSets[sub-1].ids,
                                 proSets[sub-1].size,
+                                relQty,
                                 proSets[sub-1].setName);
                         }
 		}
@@ -556,8 +979,13 @@ void releaseProduct() {
                         clearBuffer();
 
                         if (sub > 0 && sub <= ULTRA_SETS_COUNT) {
+				printf("출고할 '%s' 세트의 수량을 입력하세요: ", ultraSets[sub-1].setName);
+				scanf("%d", &relQty); 
+				clearBuffer();
+
                                 processSetRelease(ultraSets[sub-1].ids,
                                 ultraSets[sub-1].size,
+                                relQty,
                                 ultraSets[sub-1].setName);
                         }
 		}
@@ -574,8 +1002,13 @@ void releaseProduct() {
                         clearBuffer();
 
                         if (sub > 0 && sub <= WORK_SETS_COUNT) {
+				printf("출고할 '%s' 세트의 수량을 입력하세요: ", workSets[sub-1].setName);
+				scanf("%d", &relQty); 
+				clearBuffer();
+
                                 processSetRelease(workSets[sub-1].ids,
                                 workSets[sub-1].size,
+                                relQty,
                                 workSets[sub-1].setName);
                         }
 		}
@@ -583,8 +1016,7 @@ void releaseProduct() {
 		clearBuffer();
 		releaseProduct();
 		}
-
-		
+		else if (relChoise == 0) return;
 	}
 	else {
 		printf(">> [오류] 잘못된 메뉴 선택입니다.\n");
@@ -592,40 +1024,43 @@ void releaseProduct() {
 	}
 }
 
-// F05: 재고 현황 조회 (List)
-void listProducts() {
+// F05: 재고 현황 조회 (List) mode가 0이면 일반(NO만), 1이면 입고용(NO + ID)
+void listProducts(int mode) {
 	if(head == NULL) {
-		printf("\n>>> 등록된 재고가 없습니다.\n");
+		printf("\n>>> 등록된 부품이 없습니다.\n");
 		return;
 	}
 
-	printf("\n%s\n", "================================================================================================================");
-	printf("%-4s\t%-10s\t%-15s\t%-25s\t%-10s\t%-10s\t%-6s\n", 
-           	"No", "분류", "제조사", "제품명", "매입가", "판매가", "재고");
-	printf("%s\n", "----------------------------------------------------------------------------------------------------------------");
+	//ID 출력
+	if(mode==1) {
+		printf("===============================================================================================================================\n");
+		printf("%-4s\t%-10s\t%-15s\t%-30s\t%-15s\t%-17s\t%-6s\n", 
+           		"ID", "분류", "제조사", "제품명", "매입가", "판매가", "재고");
+		printf("-------------------------------------------------------------------------------------------------------------------------------\n");
+	} else {
+		printf("====================================================================================================================\n");
+                printf("%-4s\t%-10s\t%-15s\t%-30s\t%-15s\t%-17s\t%-6s\n",
+                        "No", "분류", "제조사", "제품명", "매입가", "판매가", "재고");
+                printf("--------------------------------------------------------------------------------------------------------------------\n");
+	}
 
-	Product* current = head;
-	int displayNo = 1; // 화면에만 보여줄 가짜 번호 (1번부터 시작)
-	
-	while (current != NULL) {
-		int profit = current->sellPrice - current->costPrice;
-		double marginRate = 0.0;
-
-		if (current->costPrice > 0) {
-			marginRate = ( (double)profit / current->costPrice)*100.0;
+	Product* curr = head;
+	int no = 1;
+	while (curr != NULL) {
+		if (mode == 1) {
+			// 입고용: ID 보여줌
+			printf("%-4d\t%-10s\t%-15s\t%-25s\t%-10d\t%-9d\t%6d\n",
+				curr->id,curr->category,curr->manufacturer,curr->name,curr->costPrice,curr->sellPrice,curr->stock);
+		} else {
+			// 일반용: NO만 보여줌
+			printf("%-4d\t%-10s\t%-15s\t%-25s\t%-10d\t%-9d\t%6d\n",
+                        	no,curr->category,curr->manufacturer,curr->name,curr->costPrice,curr->sellPrice,curr->stock);		
 		}
-	printf("%-4d\t%-10s\t%-15s\t%-25s\t%-10d\t%-10d\t%6d\n",
-               displayNo++, 
-               current->category, 
-               current->manufacturer, 
-               current->name, 
-		current->costPrice,
-               current->sellPrice, 
-               current->stock);
-        
-        current = current->next;
-    }
-    printf("%s\n", "================================================================================================================");
+		
+		curr = curr->next;
+		no++;
+	}
+	printf("============================================================================================================================\n");	
 }
 
 
