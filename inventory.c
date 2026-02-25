@@ -272,6 +272,41 @@ void saveCustomSet() {
 		free(newNode);
 	}
 }
+// 4. 커스텀 세트 삭제하기
+void deleteCustomSet(char* targetName) {
+    if (customHead == NULL) {
+        printf(">> 등록된 커스텀 세트가 없습니다.\n");
+        return;
+    }
+
+    CustomSet* curr = customHead;
+    CustomSet* prev = NULL;
+
+    // 1. 삭제할 세트 찾기
+    while (curr != NULL && strcmp(curr->setName, targetName) != 0) {
+        prev = curr;
+        curr = curr->next;
+    }
+
+    // 2. 못 찾았을 경우
+    if (curr == NULL) {
+        printf(">> '%s' 세트를 찾을 수 없습니다.\n", targetName);
+        return;
+    }
+
+    // 3. 연결 끊기
+    if (prev == NULL) { // 맨 앞 노드를 지울 때
+        customHead = curr->next;
+    } else {
+        prev->next = curr->next;
+    }
+
+    free(curr); // 메모리 해제
+    saveCustomSetsToFile(); // 파일에 바로 저장
+    printf(">> '%s' 커스텀 세트가 삭제되었습니다.\n", targetName);
+}
+
+
 // [유틸리티] 세트에 포함된 부품들의 재고를 일괄 증가(입고)시키는 함수
 void processSetRestock(int ids[], int size, int qty, const char* setName) {
 	printf("\n>> [%s] 세트 구성품 입고 처리를 시작합니다.\n", setName);
@@ -739,45 +774,118 @@ void updateProduct() {
 
 // F03: 품목 삭제 (Delete)
 void deleteProduct() {
-    if (head == NULL) { 
-	printf("\n>> [오류] 삭제할 재고가 없습니다.\n"); 
-	return; 
-    }
+	if (head == NULL) { 
+		printf("\n>> [오류] 삭제할 재고가 없습니다.\n"); 
+		return; 
+    	}
 
-    listProducts(0);
+	printf("\n===== [ 품목 삭제 ] =====\n");
+        printf("1. 단일 품목 삭제\n");
+        printf("2. 커스텀 세트 삭제\n");
+        printf("0. 뒤로가기\n");
+        printf("선택 >> ");
+	
+	int delChoice;
+	scanf("%d",&delChoice);
+	clearBuffer();
+	
+	if (delChoice == 1) {
+		listProducts(0);
 
-    int targetNo;
-    printf("\n삭제할 항목의 번호(No.)를 입력하세요: ");
-    scanf("%d", &targetNo); 
-    clearBuffer();
+		int targetNo;
+		printf("\n------ 1. 단일 품목 삭제 ------");
+		printf("\n삭제할 항목의 번호(No.)를 입력하세요: ");
+		scanf("%d", &targetNo);
+		clearBuffer();
 
-    Product *curr = head, *prev = NULL;
-    int count = 1;
+		Product *curr = head, *prev = NULL;
+		int count = 1;
 
-    // targetNo번째 노드 찾기
-    while (curr != NULL && count < targetNo) {
-        prev = curr;
-        curr = curr->next;
-        count++;
-    }
+		// targetNo번째 노드 찾기
+		while (curr != NULL && count < targetNo) {
+			prev = curr;
+			curr = curr->next;
+			count++;
+		}
 
-    if (curr == NULL) { 
-	printf(">> [오류] 해당 번호의 항목을 찾을 수 없습니다.\n"); 
-	return; 
-    }
+		if (curr == NULL) {
+			printf(">> [오류] 해당 번호의 항목을 찾을 수 없습니다.\n");
+			return;
+		}
 
-    char confirm;
-    printf(">> [%s] %s 제품을 삭제하시겠습니까? (y/n): ", curr->manufacturer, curr->name);
-    scanf(" %c", &confirm); clearBuffer();
+		char confirm;
+		printf(">> [%s] %s 제품을 삭제하시겠습니까? (y/n): ", curr->manufacturer, curr->name);
+		scanf(" %c", &confirm); clearBuffer();
 
-    if (confirm == 'y' || confirm == 'Y') {
-        if (prev == NULL) head = curr->next;
-        else prev->next = curr->next;
+		if (confirm == 'y' || confirm == 'Y') {
+			if (prev == NULL) { head = curr->next;}
+			else {prev->next = curr->next;}
+		free(curr);
+		printf(">> 삭제 완료!\n");
+		saveToFile();	
+		}
+	} else if (delChoice == 2) {
+		printf("\n----- [2. 커스텀 세트 삭제] -----\n");	
 
-        free(curr);
-        printf(">> 삭제 완료!\n");
-        saveToFile();
-    }
+		// 세트가 아예 없을 때
+		if (customHead == NULL) {
+			printf(">> [안내] 등록된 커스텀 세트가 없습니다.\n");
+			return; // 함수 빠져나가기
+		}
+
+		//커스텀 세트 목록 출력
+		CustomSet* curr = customHead;
+		int index = 1;
+		while (curr != NULL) {
+			printf("%d. %s (포함 부품 %d종)\n", index++, curr->setName, curr->itemCount);
+			curr = curr->next;
+		}
+
+		//삭제할 번호 입력받기
+		printf("0. 취소\n");
+		printf("삭제할 세트 번호 선택 (취소 시 0) >> ");
+		int delSetChoice;
+		scanf("%d", &delSetChoice);
+		clearBuffer();
+
+		// 4. 취소 로직
+		if (delSetChoice == 0) {
+			printf(">> 삭제가 취소되었습니다.\n");
+		}
+
+		//5. 번호 유효시 진짜 삭제
+		else if (delSetChoice > 0 && delSetChoice < index) {
+			curr = customHead;
+			CustomSet* prev = NULL;
+
+			for (int i = 1; i < delSetChoice; i++) {
+				prev = curr;
+				curr = curr->next;
+			}
+
+			if (prev == NULL) {
+				// 맨 앞칸(1번)을 지울 때: 머리를 다음 칸으로 옮김
+				customHead = curr->next;
+			} else {
+				// 중간이나 끝칸을 지울 때: 내 앞칸과 내 뒷칸을 연결해버림 
+				prev->next = curr->next;
+			}
+			
+			printf(">> '%s' 커스텀 세트가 삭제되었습니다.\n", curr->setName);
+
+			// 메모리에서 완전히 삭제
+			free(curr);
+
+			//지워진 결과를 custom_sets.txt 파일에 덮어쓰기
+			saveCustomSetsToFile();
+		}
+		
+	} else if (delChoice == 0) {
+		return; 
+	} else {
+		printf(">> [오류] 잘못된 번호입니다.\n");
+	}	
+  
 }
 
 // F04: 출고 관리 (Release)
@@ -1061,6 +1169,6 @@ void listProducts(int mode) {
 		no++;
 	}
 	printf("============================================================================================================================\n");	
-}
+} 
 
 
