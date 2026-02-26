@@ -120,12 +120,21 @@ void loadCustomSetsFromFile() {
 	while (1) {
 		CustomSet* newNode = (CustomSet*)malloc(sizeof(CustomSet));
 		if (newNode == NULL) break;
+	// [예외처리] 누군가 텍스트 파일을 잘못 건드려서 형식이 깨졌을 때의 무한 루프 차단
 
-		// [예외처리] 누군가 텍스트 파일을 잘못 건드려서 형식이 깨졌을 때의 무한 루프 차단
-		if (fscanf(f, "%49s %d", newNode->setName, &newNode->itemCount) == 2) {
-			free(newNode);
-			break;
-		}
+		int res = fscanf(f, "%49s %d", newNode->setName, &newNode->itemCount);
+        
+	        if (res == EOF) {
+       		     free(newNode);
+       		     break; // 파일 끝이면 종료
+       		}
+		if (res != 2) {
+            		// 매칭 실패 시 무한 루프 방지를 위해 한 줄을 통째로 읽어서 버림
+	       		free(newNode);
+            		char junk[256];
+            		fgets(junk, sizeof(junk), f); 
+            		continue; 
+        	}
 
 		for (int i = 0; i < newNode->itemCount; i++) {
 			fscanf(f, "%d", &newNode->ids[i]);
