@@ -32,6 +32,7 @@ typedef struct CustomSet {
 
 extern Product* head;
 extern int lastId;
+extern CustomSet* customHead;
 
 extern const char* VALID_CATEGORIES[];
 extern const int NUM_CATEGORIES;
@@ -44,15 +45,19 @@ extern const int NUM_MANUFACTURERS;
 void clearBuffer();
 void saveToFile();
 void loadFromFile();
-void showCategoryMenu();     // 입력 보조
-void showManufacturerMenu(); // 입력 보조
-Product* searchByID(int id); // 내부 로직 보조
-void saveCustomSet();
-void loadCustomSetsFromFile();
-void saveCustomSetsToFile();
-void processSetRestock(int ids[], int size, int qty, const char* setName);
-void processSetRelease(int ids[], int size, int qty, const char* setName);
-void logSale(const char* productName, int qty, int cost, int sell);
+void showCategoryMenu();     // 카테고리 메뉴 출력
+void showManufacturerMenu(); // 제조사 메뉴 출력
+Product* searchByID(int id); // ID로 부품 검색
+Product* searchByNo(int no);  // 순번(No.)으로 부품 검색
+int getCategoryOrder(const char* category); // 카테고리별 출력 순서 정렬
+
+void saveCustomSet();			// 커스텀 세트 추가
+void deleteCustomSet(char* targetName);	// 커스텀 세트 삭제
+void loadCustomSetsFromFile();		// 커스텀 세트 파일 로드
+void saveCustomSetsToFile();		// 커스텀 세트 파일 저장
+void processSetRestock(int ids[], int size, int qty, const char* setName);	// 세트 입고
+void processSetRelease(int ids[], int size, int qty, const char* setName);	// 세트 출고
+void logSale(const char* productName, int qty, int cost, int sell);		// 장부 파일 로드
 
 // --- Core Features (Match with Menu) ---
 void addProduct();      // F01. 신규 품목 등록 (Add)
@@ -61,4 +66,5 @@ void deleteProduct();   // F03. 품목 삭제 (Delete)
 void releaseProduct();  // F04. 출고 관리 (Release)
 void listProducts(int mode);    // F05. 재고 현황 조회 (List)
 void viewSalesLog();	// F06.매출 및 장부 조회
+
 #endif
